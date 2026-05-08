@@ -1,0 +1,18 @@
+[project]
+site_name = "torch-abi-audit"
+site_description = "Audit Python extensions for PyTorch (and CPython) Stable ABI compliance."
+site_author = "Ralf Gommers"
+site_url = "https://quansight.github.io/torch-abi-audit/"
+copyright = """Copyright &copy; 2026 Ralf Gommers"""
+
+[project.theme]
+name = "material"
+
+[[project.nav]]
+"Overview" = "index.md"
+
+[[project.nav]]
+"CLI reference" = "cli.md"
+
+[[project.nav]]
+"Python API" = "api.md"

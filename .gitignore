@@ -1,0 +1,34 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+src/torch_abi_audit/_version.py
+
+# Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pyrefly/
+.ruff_cache/
+.mypy_cache/
+
+# Environments
+.venv/
+.python-version.local
+.pixi/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Docs build
+docs/site/
+docs/.cache/
+
+# Scratch
+*.so
+*.dylib
+*.pyd

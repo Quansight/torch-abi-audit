@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "torch-abi-audit"
+dynamic = ["version"]
+description = "Audit Python extensions for PyTorch (and CPython) Stable ABI compliance."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ralf Gommers", email = "ralf.gommers@gmail.com" }]
+keywords = ["abi", "stable-abi", "pytorch", "cpython", "limited-api", "extension-modules"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Software Distribution",
+    "Typing :: Typed",
+]
+dependencies = [
+    "abi3info",
+    "pycxxfilt",
+]
+
+[project.urls]
+Homepage = "https://github.com/Quansight/torch-abi-audit"
+Documentation = "https://quansight.github.io/torch-abi-audit/"
+Issues = "https://github.com/Quansight/torch-abi-audit/issues"
+
+[project.scripts]
+torch-abi-audit = "torch_abi_audit.cli:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/torch_abi_audit/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/torch_abi_audit"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/",
+    "tests/",
+    "docs/",
+    "scripts/",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.pyrefly]
+project-includes = ["src", "tests"]
+python-version = "3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pyrefly",
+    "zensical",
+]
