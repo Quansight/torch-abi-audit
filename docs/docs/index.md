@@ -15,23 +15,27 @@ the "limited API" that lets a single wheel work across CPython versions.
 
 ## Status of the PyTorch ecosystem
 
-A snapshot of where things stand as of May 2026. These are illustrative
-examples — not an exhaustive list — and more projects are being ported
-all the time, so this may be out of date by the time you read it.
+A snapshot of where things stand as of September 2026. This is not an
+exhaustive list, and more projects are being ported all the time, so it may
+be out of date by the time you read it.
 
-Migration completed:
+Migrated (a fully stable-ABI release, measured with this tool):
 
-- [torchao](https://github.com/pytorch/ao)
-- [torchaudio](https://github.com/pytorch/audio)
-- [FlashAttention-3](https://github.com/Dao-AILab/flash-attention)
-- [xformers](https://github.com/facebookresearch/xformers)
+- [amd-quark](https://github.com/amd/Quark) (stable from 0.12; legacy pybind11 kept as fallback)
+- [torchaudio](https://github.com/pytorch/audio) (stable from 2.10.0)
+- [torchcodec](https://github.com/pytorch/torchcodec) (stable from 0.12.0)
+- [torchvision](https://github.com/pytorch/vision) (stable from 0.29.0)
+- [xformers](https://github.com/facebookresearch/xformers) (stable from 0.0.34)
 
-In progress:
+In progress (adopting stable shims, not yet fully stable):
 
-- [torchcodec](https://github.com/pytorch/torchcodec)
-- [torchvision](https://github.com/pytorch/vision)
-- [vLLM](https://github.com/vllm-project/vllm)
-- [kvcached](https://github.com/ovg-project/kvcached)
+- [causal-conv1d](https://github.com/Dao-AILab/causal-conv1d) (migration [PR #123](https://github.com/Dao-AILab/causal-conv1d/pull/123) open)
+- [flash-attn](https://github.com/Dao-AILab/flash-attention) (FA-3/Hopper only; main package still unstable)
+- [kvcached](https://github.com/ovg-project/kvcached) ([PR #497](https://github.com/ovg-project/kvcached/pull/497) landed in main, not yet released)
+- [mamba-ssm](https://github.com/state-spaces/mamba) (migration [PR #1042](https://github.com/state-spaces/mamba/pull/1042) open)
+- [torchao](https://github.com/pytorch/ao) (partial; first stable modules in 0.16.0, CPU kernels still unstable)
+- [vLLM](https://github.com/vllm-project/vllm) (building a parallel stable-ABI extension `_C_stable_libtorch` alongside the legacy one)
+- [zentorch](https://github.com/amd/ZenDNN-pytorch-plugin)
 
 Gaps in the stable surface still get filled in as downstream projects hit
 them, so the list of "completed" packages will keep growing.
