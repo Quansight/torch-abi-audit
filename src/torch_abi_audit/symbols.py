@@ -64,11 +64,27 @@ def extract_undefined_symbols(path: Path) -> list[str]:
     return symbols
 
 
-def has_pyinit_symbol(path: Path) -> bool:
-    """Return True if ``path`` defines a ``PyInit_*`` symbol (Python extension marker).
+_MODULE_ENTRYPOINT_PREFIXES = (
+    "PyInit_",
+    "PyInitU_",
+    "PyModExport_",
+    "PyModExportU_",
+)
 
-    On macOS Mach-O there is one symbol table; ``-g`` shows external symbols.
-    On Linux we want exported dynamic symbols, so ``-D``.
+
+def is_module_entrypoint(name: str) -> bool:
+    """True if ``name`` is a Python extension entry-point symbol (any leading
+    underscores from Mach-O already tolerated)."""
+    return name.lstrip("_").startswith(_MODULE_ENTRYPOINT_PREFIXES)
+
+
+def has_module_entrypoint(path: Path) -> bool:
+    """Return True if ``path`` defines a Python module entry point.
+
+    Recognises the classic ``PyInit_*`` hook and the PEP 793 ``PyModExport_*``
+    hook (plus their ``*U_`` non-ASCII variants). On macOS Mach-O there is one
+    symbol table; ``-g`` shows external symbols. On Linux we want exported
+    dynamic symbols, so ``-D``.
     """
     if not shutil.which("nm"):
         return False
@@ -80,7 +96,7 @@ def has_pyinit_symbol(path: Path) -> bool:
         parts = line.split()
         # Defined symbols have 3 tokens: "<addr> <type> <name>".
         # Undefined have 2: "U <name>" — those won't satisfy len >= 3.
-        if len(parts) >= 3 and parts[-1].lstrip("_").startswith("PyInit_"):
+        if len(parts) >= 3 and is_module_entrypoint(parts[-1]):
             return True
     return False
 
@@ -88,17 +104,17 @@ def has_pyinit_symbol(path: Path) -> bool:
 def is_extension_module(path: Path) -> bool:
     """True iff ``path`` is a CPython extension module (vs. a bundled shared library).
 
-    The only reliable signal is a defined ``PyInit_*`` symbol — the entry point
-    Python's import machinery looks up. Filename tags like ``abi3`` or
-    ``cpython`` are routinely used by torch ecosystem packages for libraries
-    loaded via ``STABLE_TORCH_LIBRARY`` rather than Python's importer, so they
-    aren't a reliable signal on their own.
+    The only reliable signal is a defined module entry point (``PyInit_*`` or the
+    PEP 793 ``PyModExport_*``) — the symbol Python's import machinery looks up.
+    Filename tags like ``abi3`` or ``cpython`` are routinely used by torch
+    ecosystem packages for libraries loaded via ``STABLE_TORCH_LIBRARY`` rather
+    than Python's importer, so they aren't a reliable signal on their own.
     """
     if not path.is_file():
         return False
     if not path.name.endswith((".so", ".pyd", ".dylib")):
         return False
-    return has_pyinit_symbol(path)
+    return has_module_entrypoint(path)
 
 
 def find_compiled_libraries(directory: Path) -> list[Path]:
