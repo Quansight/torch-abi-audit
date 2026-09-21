@@ -8,13 +8,36 @@ import pytest
 
 from torch_abi_audit.symbols import (
     extract_undefined_symbols,
-    has_pyinit_symbol,
+    has_module_entrypoint,
     is_extension_module,
+    is_module_entrypoint,
 )
 
 
 def test_pyinit_symbol_present(cpython_stable_so: Path):
-    assert has_pyinit_symbol(cpython_stable_so) is True
+    assert has_module_entrypoint(cpython_stable_so) is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "PyInit_foo",
+        "PyInitU_foo",
+        "PyModExport_foo",  # PEP 793
+        "PyModExportU_foo",  # PEP 793 non-ASCII
+        "_PyModExport_foo",  # Mach-O leading underscore
+    ],
+)
+def test_is_module_entrypoint_accepts(name: str):
+    assert is_module_entrypoint(name) is True
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["PyModule_Create2", "PyInit", "not_an_entrypoint", "PyModExport", "Py_Initialize"],
+)
+def test_is_module_entrypoint_rejects(name: str):
+    assert is_module_entrypoint(name) is False
 
 
 def test_is_extension_module_abi3_filename(cpython_stable_so: Path):
