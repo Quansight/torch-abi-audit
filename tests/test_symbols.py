@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 from pathlib import Path
 
@@ -77,6 +78,24 @@ def test_pymodexport_package_classification(
 
     assert len(report.extensions) == int(defined)
     assert len(report.bundled_libs) == int(not defined)
+
+
+def test_compiled_pymodexport_package_classification(cpython_pymodexport_so: Path):
+    """A real export-only module is importable and classified as an extension."""
+    spec = importlib.util.spec_from_file_location(
+        "fixture_pymodexport", cpython_pymodexport_so
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.__name__ == "fixture_pymodexport"
+
+    report = inspect_package(cpython_pymodexport_so.parent)
+
+    assert report.error is None
+    assert [ext.path for ext in report.extensions] == [cpython_pymodexport_so]
+    assert report.extensions[0].error is None
+    assert report.bundled_libs == ()
 
 
 def test_is_extension_module_abi3_filename(cpython_stable_so: Path):
