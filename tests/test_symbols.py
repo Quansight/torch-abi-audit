@@ -1,11 +1,13 @@
-"""Symbol extraction tests — these need a compiler and use the on-demand fixtures."""
+"""Symbol extraction tests, with compiled fixtures and mocked nm output."""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
+from torch_abi_audit import inspect_package
 from torch_abi_audit.symbols import (
     extract_undefined_symbols,
     has_module_entrypoint,
@@ -38,6 +40,43 @@ def test_is_module_entrypoint_accepts(name: str):
 )
 def test_is_module_entrypoint_rejects(name: str):
     assert is_module_entrypoint(name) is False
+
+
+@pytest.mark.parametrize("prefix", ["PyModExport_", "PyModExportU_"])
+@pytest.mark.parametrize("defined", [True, False])
+def test_pymodexport_package_classification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    defined: bool,
+):
+    """Only a defined export hook makes a library a Python extension."""
+    library = tmp_path / "example.so"
+    library.touch()
+    symbol = f"{prefix}example"
+
+    def fake_nm(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        # Undefined-symbol extraction and entry-point detection use separate
+        # nm invocations.
+        if args[1].startswith("-uj"):
+            output = "" if defined else f"{symbol}\n"
+        else:
+            output = (
+                f"0000000000001000 T {symbol}\n"
+                if defined
+                else f"                 U {symbol}\n"
+            )
+        return subprocess.CompletedProcess(args, 0, stdout=output, stderr="")
+
+    monkeypatch.setattr(
+        "torch_abi_audit.symbols.shutil.which", lambda _: "/usr/bin/nm"
+    )
+    monkeypatch.setattr("torch_abi_audit.symbols.subprocess.run", fake_nm)
+
+    report = inspect_package(tmp_path)
+
+    assert len(report.extensions) == int(defined)
+    assert len(report.bundled_libs) == int(not defined)
 
 
 def test_is_extension_module_abi3_filename(cpython_stable_so: Path):
