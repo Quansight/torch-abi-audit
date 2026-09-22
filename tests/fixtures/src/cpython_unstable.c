@@ -3,11 +3,8 @@
 
 static PyObject *touch_internal(PyObject *self, PyObject *args) {
     (void)self; (void)args;
-    /* _PyArg_CheckPositional is private and not part of the stable ABI. */
-    if (!_PyArg_CheckPositional("touch", PyTuple_GET_SIZE(args), 0, 0)) {
-        return NULL;
-    }
-    Py_RETURN_NONE;
+    /* Private, non-stable API available across the tested Python versions. */
+    return _PyDict_NewPresized(0);
 }
 
 static PyMethodDef Methods[] = {
