@@ -97,6 +97,22 @@ def cpython_unstable_so(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return out
 
 
+@pytest.fixture(scope="session")
+def cpython_pymodexport_so(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    if sys.version_info < (3, 15):
+        pytest.skip("PyModExport requires Python 3.15+")
+    out = tmp_path_factory.mktemp("ext-pymodexport") / "fixture_pymodexport.so"
+    _compile(
+        src=_SRC / "cpython_pymodexport.c",
+        out=out,
+        is_cpp=False,
+        extra_cflags=[],
+        extra_ldflags=[],
+        include_dirs=[sysconfig.get_paths()["include"]],
+    )
+    return out
+
+
 def _torch_paths() -> tuple[list[str], list[str]] | None:
     try:
         import torch  # type: ignore[import-not-found]
