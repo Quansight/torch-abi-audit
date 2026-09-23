@@ -36,26 +36,21 @@ from pathlib import Path
 EXPECTED: dict[str, str] = {
     "torchaudio": "torch-stable",       # migration completed in 2.10 (pytorch/audio#3902)
     "torch": "torch-unstable",          # implements libtorch; references at::/c10:: by design
-    "torchcodec": "torch-unstable",     # not yet migrated to torch::stable
+    "torchcodec": "torch-stable",       # migration completed by 0.16.0
 }
 
 # Runs inside the freshly-built test venv. Uses the Python API directly so we
 # can read the @property roll-ups that the JSON formatter doesn't include.
 INNER = r"""
 import json, sys
-from importlib.metadata import PackageNotFoundError, version
 from torch_abi_audit import inspect_package
 
 out = {}
 for name in sys.argv[1:]:
     r = inspect_package(name)
     libs = (*r.extensions, *r.bundled_libs)
-    try:
-        ver = version(name)
-    except PackageNotFoundError:
-        ver = "?"
     out[name] = {
-        "version": ver,
+        "version": r.version or "?",
         "torch_verdict": r.torch_verdict,
         "cpython_verdict": r.cpython_verdict,
         "n_extensions": len(r.extensions),
