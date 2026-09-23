@@ -9,6 +9,7 @@ from typing import Any
 
 from .cpython_abi import CPythonABIVerdict
 from .torch_abi import TorchABIVerdict
+from .torch_versions import parse_version
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,32 @@ class PackageReport:
         if any(e.torch.stable for e in libs):
             return "torch-stable"
         return "no-torch"
+
+    @property
+    def min_torch_version(self) -> str | None:
+        """Highest ``min_torch_version`` across all libs (``None`` if no shims)."""
+        versions = [
+            e.torch.min_torch_version
+            for e in self._all_libs
+            if e.torch.min_torch_version
+        ]
+        if not versions:
+            return None
+        return max(versions, key=parse_version)
+
+    @property
+    def has_unknown_shim_symbols(self) -> bool:
+        """True if any lib references shim symbols newer than our vendored data."""
+        return any(e.torch.unknown_shim_symbols for e in self._all_libs)
+
+    @property
+    def min_torch_display(self) -> str | None:
+        """``min_torch_version`` as a display string, ``>=``-prefixed when the
+        floor is a lower bound (unknown newer symbols present)."""
+        version = self.min_torch_version
+        if version is None:
+            return None
+        return f">={version}" if self.has_unknown_shim_symbols else version
 
     @property
     def cpython_verdict(self) -> str:
@@ -142,8 +169,28 @@ def _format_extension_lines(ext: ExtensionReport, root: Path, verbose: bool) -> 
     line = f"    [{torch_label:<8}] [{cpy_label:<22}] {rel}"
     if ext.torch.uses_torch:
         line += f"  (stable_shim={ext.torch.stable_shim_count}, unstable={len(ext.torch.unstable_symbols)})"
+        if ext.torch.min_torch_version:
+            prefix = ">=" if ext.torch.unknown_shim_symbols else ""
+            line += f"  min-torch={prefix}{ext.torch.min_torch_version}"
     out = [line]
     if verbose:
+        if ext.torch.version_defining_symbols:
+            reqs = ", ".join(ext.torch.version_defining_symbols[:5])
+            more = len(ext.torch.version_defining_symbols) - 5
+            if more > 0:
+                reqs += f", +{more} more"
+            out.append(
+                f"        requires torch {ext.torch.min_torch_version}: {reqs}"
+            )
+        if ext.torch.unknown_shim_symbols:
+            unk = ", ".join(ext.torch.unknown_shim_symbols[:5])
+            more = len(ext.torch.unknown_shim_symbols) - 5
+            if more > 0:
+                unk += f", +{more} more"
+            out.append(
+                "        shim symbols newer than vendored data "
+                f"(regenerate to resolve): {unk}"
+            )
         for s in ext.torch.unstable_symbols[:15]:
             out.append(f"        torch unstable: {s}")
         if len(ext.torch.unstable_symbols) > 15:
@@ -168,6 +215,7 @@ def format_package_table(report: PackageReport, *, verbose: bool = False) -> str
         f"Package: {report.name}",
         f"  Root: {report.root}",
         f"  Torch ABI:   {_TORCH_LABEL.get(report.torch_verdict, report.torch_verdict)}",
+        f"  Min torch:   {report.min_torch_display or 'n/a'}",
         f"  CPython ABI: {_CPY_LABEL.get(report.cpython_verdict, report.cpython_verdict)}",
         f"  Extensions:  {len(report.extensions)}",
         f"  Bundled libs: {len(report.bundled_libs)}",
@@ -188,7 +236,7 @@ def format_package_table(report: PackageReport, *, verbose: bool = False) -> str
 def format_environment_table(
     report: EnvironmentReport, *, verbose: bool = False, show_all: bool = False
 ) -> str:
-    rows: list[tuple[str, str, str, int, int]] = []
+    rows: list[tuple[str, str, str, str, int, int]] = []
     for pkg in report.packages:
         torch_v = pkg.torch_verdict
         if not show_all and torch_v == "no-torch":
@@ -196,6 +244,7 @@ def format_environment_table(
         rows.append((
             pkg.name,
             _TORCH_LABEL.get(torch_v, torch_v),
+            pkg.min_torch_display or "-",
             _CPY_LABEL.get(pkg.cpython_verdict, pkg.cpython_verdict),
             len(pkg.extensions),
             len(pkg.bundled_libs),
@@ -207,21 +256,31 @@ def format_environment_table(
     name_w = max(min(name_w, 40), 16)
 
     out = [f"Site-packages: {report.site_packages}", ""]
-    out.append(f"  {'PACKAGE':<{name_w}}  {'TORCH':<8}  {'CPYTHON':<8}  EXTS  BUNDLED")
-    out.append(f"  {'-' * name_w}  {'-' * 8}  {'-' * 8}  ----  -------")
+    out.append(
+        f"  {'PACKAGE':<{name_w}}  {'TORCH':<8}  {'MIN-TORCH':<9}  {'CPYTHON':<8}  EXTS  BUNDLED"
+    )
+    out.append(
+        f"  {'-' * name_w}  {'-' * 8}  {'-' * 9}  {'-' * 8}  ----  -------"
+    )
     # Sort: unstable/error first, then stable, then no-torch.
     order = {"UNSTABLE": 0, "ERROR": 1, "STABLE": 2, "NO-TORCH": 3}
     rows.sort(key=lambda r: (order.get(r[1], 99), r[0]))
-    for name, torch_v, cpy_v, n_ext, n_bundled in rows:
+    for name, torch_v, min_v, cpy_v, n_ext, n_bundled in rows:
         display_name = name if len(name) <= name_w else name[: name_w - 1] + "…"
         out.append(
-            f"  {display_name:<{name_w}}  {torch_v:<8}  {cpy_v:<8}  {n_ext:>4}  {n_bundled:>7}"
+            f"  {display_name:<{name_w}}  {torch_v:<8}  {min_v:<9}  {cpy_v:<8}  {n_ext:>4}  {n_bundled:>7}"
         )
 
     if verbose:
         out.append("")
         for pkg in report.packages:
-            if pkg.torch_verdict in ("torch-unstable", "error"):
+            # Expand unstable/error packages, plus stable packages that carry
+            # version info -- those are the ones this feature targets, and their
+            # verbose detail lists the version-defining symbols.
+            expand = pkg.torch_verdict in ("torch-unstable", "error") or (
+                pkg.torch_verdict == "torch-stable" and pkg.min_torch_version
+            )
+            if expand:
                 out.append("")
                 out.append(format_package_table(pkg, verbose=True))
 

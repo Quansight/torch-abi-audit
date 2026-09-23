@@ -36,7 +36,7 @@ from pathlib import Path
 EXPECTED: dict[str, str] = {
     "torchaudio": "torch-stable",       # migration completed in 2.10 (pytorch/audio#3902)
     "torch": "torch-unstable",          # implements libtorch; references at::/c10:: by design
-    "torchcodec": "torch-unstable",     # not yet migrated to torch::stable
+    "torchcodec": "torch-stable",       # migration completed by 0.16.0
 }
 
 # Runs inside the freshly-built test venv. Uses the Python API directly so we

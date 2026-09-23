@@ -2,8 +2,33 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from torch_abi_audit.cpython_abi import CPythonABIVerdict
-from torch_abi_audit.report import _cpython_label
+from torch_abi_audit.report import ExtensionReport, PackageReport, _cpython_label
+from torch_abi_audit.torch_abi import TorchABIVerdict
+
+
+def test_env_verbose_expands_stable_packages():
+    """`--env -v` must expand stable packages so their version-defining symbols
+    show, not only unstable/error ones (PR #4 #4)."""
+    from torch_abi_audit.report import EnvironmentReport, format_environment_table
+
+    stable_ext = ExtensionReport(
+        path=Path("/env/mypkg/_c.abi3.so"),
+        cpython=CPythonABIVerdict(intent=True, compliant=True),
+        torch=TorchABIVerdict(
+            uses_torch=True,
+            stable=True,
+            stable_shim_count=1,
+            min_torch_version="2.14.0",
+            version_defining_symbols=("torch_has_storage",),
+        ),
+    )
+    pkg = PackageReport("mypkg", Path("/env/mypkg"), extensions=(stable_ext,))
+    env = EnvironmentReport(site_packages=Path("/env"), packages=(pkg,))
+    out = format_environment_table(env, verbose=True)
+    assert "requires torch 2.14.0: torch_has_storage" in out
 
 
 def test_label_compliant():
