@@ -19,8 +19,10 @@ and ``test/check_binary_symbols.py`` in pytorch/pytorch.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
+
+from . import torch_versions
 
 # Stable C-shim symbols — both `aoti_torch_*` and the broader `torch_*` C entry
 # points (e.g. `torch_call_dispatcher`) are part of the documented stable surface.
@@ -52,29 +54,45 @@ def classify_symbol(symbol: str) -> SymbolKind:
 
 @dataclass(frozen=True, slots=True)
 class TorchABIVerdict:
-    """Result of PyTorch ABI inspection for a single extension module."""
+    """Result of PyTorch ABI inspection for a single extension module.
+
+    ``min_torch_version`` is a ``"2.9.0"``-style floor (``None`` if no stable
+    shims are used); ``version_defining_symbols`` are the shims pinning it.
+    ``unknown_shim_symbols`` are shim symbols newer than our vendored data (the
+    floor is a lower bound only while these are present). See
+    :mod:`.torch_versions`.
+    """
 
     uses_torch: bool
     stable: bool
     unstable_symbols: tuple[str, ...] = ()
     stable_shim_count: int = 0
+    min_torch_version: str | None = None
+    version_defining_symbols: tuple[str, ...] = ()
+    unknown_shim_symbols: tuple[str, ...] = ()
 
 
 def classify_symbols(symbols: list[str] | tuple[str, ...]) -> TorchABIVerdict:
     """Aggregate per-symbol classifications into a verdict for one extension."""
     unstable: list[str] = []
-    stable_shim_count = 0
+    stable_shim: list[str] = []
     for sym in symbols:
         kind = classify_symbol(sym)
         if kind == "unstable":
             unstable.append(sym)
         elif kind == "stable_shim":
-            stable_shim_count += 1
-    uses_torch = bool(unstable) or stable_shim_count > 0
+            stable_shim.append(sym)
+    uses_torch = bool(unstable) or bool(stable_shim)
     stable = uses_torch and not unstable
+    min_version, defining, unknown = torch_versions.minimum_version(stable_shim)
     return TorchABIVerdict(
         uses_torch=uses_torch,
         stable=stable,
         unstable_symbols=tuple(unstable),
-        stable_shim_count=stable_shim_count,
+        stable_shim_count=len(stable_shim),
+        min_torch_version=(
+            torch_versions.format_version(min_version) if min_version else None
+        ),
+        version_defining_symbols=defining,
+        unknown_shim_symbols=unknown,
     )
