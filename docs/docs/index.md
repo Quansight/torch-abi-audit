@@ -100,4 +100,10 @@ stable surface, and as `UNSTABLE` if any `c10::*`, `at::*`, or non-stable
 4. Classify each symbol against two rule sets — the CPython stable-ABI
    symbol set from [abi3info](https://pypi.org/project/abi3info/) and the
    PyTorch stable namespace regexes.
-5. Roll up per-library verdicts to a per-package and per-environment view.
+5. Map each stable shim symbol to the torch release that introduced it (via a
+   vendored copy of PyTorch's `shim_function_versions.txt`, plus a vendored
+   `2.9.0` baseline set) and take the maximum, which is the minimum torch
+   version the library can run against. Symbols newer than the vendored data are
+   flagged rather than misdated as `2.9.0`.
+6. Roll up per-library verdicts and version floors to a per-package and
+   per-environment view.
