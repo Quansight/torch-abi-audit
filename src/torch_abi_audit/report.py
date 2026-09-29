@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, is_dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +112,62 @@ class EnvironmentReport:
 
     site_packages: Path
     packages: tuple[PackageReport, ...] = field(default_factory=tuple)
+
+
+# ---------------------------------------------------------------------------
+# CI policy checks
+
+
+class CheckPolicy(StrEnum):
+    """``--check`` gate policies."""
+
+    TORCH = "torch"
+    ABI3 = "abi3"
+    BOTH = "both"
+
+
+def _package_violations(pkg: PackageReport, mode: CheckPolicy) -> list[str]:
+    """Reasons ``pkg`` violates the ``--check`` policy (empty if compliant)."""
+    reasons = []
+    uses_torch = pkg.torch_verdict in ("torch-stable", "torch-unstable")
+    if mode in (CheckPolicy.TORCH, CheckPolicy.BOTH) and (
+        pkg.torch_verdict == "torch-unstable"
+    ):
+        reasons.append("uses libtorch without the stable ABI")
+    if mode in (CheckPolicy.ABI3, CheckPolicy.BOTH) and uses_torch and (
+        pkg.cpython_verdict in ("not-abi3", "mixed")
+    ):
+        reasons.append(f"CPython ABI is {pkg.cpython_verdict} (not abi3-compliant)")
+    return reasons
+
+
+def collect_violations(
+    packages: Iterable[PackageReport], mode: CheckPolicy
+) -> list[tuple[str, list[str]]]:
+    """``(name, reasons)`` for each package violating the ``--check`` policy.
+
+    The abi3 policy is scoped to torch-using packages -- an arbitrary
+    non-torch package failing the CPython limited API is out of this tool's
+    remit and would make ``--env`` gates useless.
+    """
+    out = []
+    for pkg in packages:
+        reasons = _package_violations(pkg, mode)
+        if reasons:
+            out.append((pkg.name, reasons))
+    return out
+
+
+def format_violations(
+    violations: list[tuple[str, list[str]]], mode: CheckPolicy
+) -> str:
+    """Human-readable failure summary for stderr."""
+    lines = [
+        f"FAIL: --check {mode} found {len(violations)} non-compliant package(s):"
+    ]
+    for name, reasons in violations:
+        lines.append(f"  {name}: {'; '.join(reasons)}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

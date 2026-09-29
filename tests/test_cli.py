@@ -58,3 +58,46 @@ def test_inspect_abi3_fixture_is_compliant(
     assert ext["cpython"]["intent"] is True
     assert ext["cpython"]["compliant"] is True
     assert ext["cpython"]["violations"] == []
+
+
+def test_check_passes_on_no_torch_target(capsys: pytest.CaptureFixture[str]):
+    """`--check torch` on a pure-Python target exits 0."""
+    rc = main(["json", "--check", "torch"])
+    assert rc == 0
+
+
+def test_check_torch_fails_on_unstable(monkeypatch, capsys: pytest.CaptureFixture[str]):
+    from pathlib import Path
+
+    from torch_abi_audit import cli
+    from torch_abi_audit.cpython_abi import CPythonABIVerdict
+    from torch_abi_audit.report import ExtensionReport, PackageReport
+    from torch_abi_audit.torch_abi import TorchABIVerdict
+
+    unstable = PackageReport(
+        "evilpkg",
+        Path("/x/evilpkg"),
+        extensions=(
+            ExtensionReport(
+                path=Path("/x/evilpkg/_c.so"),
+                cpython=CPythonABIVerdict(intent=False, compliant=True),
+                torch=TorchABIVerdict(uses_torch=True, stable=False),
+            ),
+        ),
+    )
+    monkeypatch.setattr(cli, "inspect_package", lambda t: unstable)
+    rc = main(["evilpkg", "--check", "torch"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "FAIL" in err and "evilpkg" in err
+
+
+def test_check_operational_error_wins_over_policy(monkeypatch):
+    from torch_abi_audit import cli
+
+    def boom(t):
+        raise RuntimeError("nope")
+
+    monkeypatch.setattr(cli, "inspect_package", boom)
+    rc = main(["missing", "--check", "torch"])
+    assert rc == 2
