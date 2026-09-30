@@ -48,6 +48,11 @@ class PackageReport:
         return (*self.extensions, *self.bundled_libs)
 
     @property
+    def has_error(self) -> bool:
+        """True if this package or any of its libraries failed to inspect."""
+        return bool(self.error) or any(e.error for e in self._all_libs)
+
+    @property
     def torch_verdict(self) -> str:
         """Worst-case roll-up across extensions AND bundled libraries.
 
@@ -148,7 +153,9 @@ def collect_violations(
 
     The abi3 policy is scoped to torch-using packages -- an arbitrary
     non-torch package failing the CPython limited API is out of this tool's
-    remit and would make ``--env`` gates useless.
+    remit and would make ``--env`` gates useless. It also only fires for
+    packages with a Python extension module; one built solely from bundled
+    libraries has ``cpython_verdict == "no-extensions"`` and is never flagged.
     """
     out = []
     for pkg in packages:

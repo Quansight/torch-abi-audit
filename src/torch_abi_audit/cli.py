@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
@@ -28,6 +29,26 @@ def _check_policy(value: str) -> CheckPolicy:
         raise argparse.ArgumentTypeError(
             f"invalid policy {value!r} (choose from {choices})"
         ) from None
+
+
+def _finalize_exit_code(
+    reports: Sequence[PackageReport], check: CheckPolicy | None, rc: int
+) -> int:
+    """Fold operational errors and ``--check`` violations into the exit code.
+
+    Precedence: operational error (2) > policy violation (1) > success (0).
+    ``rc`` carries any code already set by the caller (e.g. a raised error).
+    """
+    failed = [r.name for r in reports if r.has_error]
+    if failed:
+        print(f"error: inspection failed for {', '.join(failed)}", file=sys.stderr)
+        rc = 2
+    if check:
+        violations = collect_violations(reports, check)
+        if violations:
+            print(format_violations(violations, check), file=sys.stderr)
+            rc = rc or 1
+    return rc
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -96,12 +117,7 @@ def _run_env_mode(
         print(format_json(report))
     else:
         print(format_environment_table(report, verbose=verbose, show_all=show_all))
-    if check:
-        violations = collect_violations(report.packages, check)
-        if violations:
-            print(format_violations(violations, check), file=sys.stderr)
-            return 1
-    return 0
+    return _finalize_exit_code(report.packages, check, 0)
 
 
 def _run_target_mode(
@@ -128,13 +144,7 @@ def _run_target_mode(
         for r in reports:
             print(format_package_table(r, verbose=verbose))
             print()
-    if check:
-        violations = collect_violations(reports, check)
-        if violations:
-            print(format_violations(violations, check), file=sys.stderr)
-            # Don't mask an operational error (2) with the policy code (1).
-            rc = rc or 1
-    return rc
+    return _finalize_exit_code(reports, check, rc)
 
 
 def main(argv: list[str] | None = None) -> int:

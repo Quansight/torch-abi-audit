@@ -6,7 +6,7 @@ icon: lucide/terminal
 
 ```text
 usage: torch-abi-audit [-h] [--version] [--env | --site-packages PATH]
-                       [--json] [--all] [-v]
+                       [--json] [--all] [-v] [--check POLICY]
                        [TARGET ...]
 ```
 
@@ -247,12 +247,45 @@ python scripts/update_shim_versions.py          # rewrite the vendored copy
 python scripts/update_shim_versions.py --check  # CI: fail if it's stale
 ```
 
+## CI gating -- `--check`
+
+`--check POLICY` turns a verdict into a non-zero exit code so a build fails
+when a package isn't on the stable ABI. Without it, the CLI only reports and
+exits `0` (see [Exit codes](#exit-codes)).
+
+| Policy | Fails when |
+|--------|------------|
+| `torch` | any inspected package uses libtorch without the stable ABI (`UNSTABLE`). |
+| `abi3` | any torch-using package isn't CPython abi3-compliant. |
+| `both` | either of the above. |
+
+The `abi3` policy is scoped to torch-using packages, so an arbitrary
+non-torch package failing the limited API doesn't break an `--env` gate.
+It also only judges packages that ship a Python **extension module**
+(`PyInit_*`). A torch package made up entirely of bundled libraries loaded
+via `STABLE_TORCH_LIBRARY` (e.g. `torchaudio`) has no CPython ABI verdict, so
+`abi3` / `both` never flag it -- the CPython limited API applies only to
+modules loaded by Python's importer, not to `dlopen`-ed shared libraries.
+
+```bash
+torch-abi-audit mypkg --check torch          # gate one package
+torch-abi-audit --env --check both           # gate the whole environment
+```
+
+Violations print a `FAIL:` summary to stderr and exit `1`. An operational
+error (below) still exits `2` and takes precedence over the policy code.
+
 ## Exit codes
 
 The CLI reports verdicts via stdout / JSON; it returns:
 
-- `0` on inspection success regardless of verdict.
-- `2` on operational errors (missing `nm`, unknown import name, unreadable path).
+- `0` on inspection success with no `--check` policy violation.
+- `1` when `--check` is given and a policy violation is found.
+- `2` on operational errors (missing `nm`, unknown import name, unreadable
+  path, or a library that fails to parse) -- whether the failure is raised or
+  recorded in a report's `error` field.
 
-This makes the tool safe to run interactively without `set -e` surprises.
-For CI gating, parse the JSON output.
+Without `--check`, the tool is safe to run interactively without `set -e`
+surprises: it only exits non-zero on operational errors. As an alternative to
+`--check`, parse the JSON output and act on the `torch`/`cpython` fields
+yourself.

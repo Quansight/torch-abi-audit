@@ -75,21 +75,21 @@ def test_check_torch_fails_on_unstable(monkeypatch, capsys: pytest.CaptureFixtur
     from torch_abi_audit.torch_abi import TorchABIVerdict
 
     unstable = PackageReport(
-        "evilpkg",
-        Path("/x/evilpkg"),
+        "unstablepkg",
+        Path("/x/unstablepkg"),
         extensions=(
             ExtensionReport(
-                path=Path("/x/evilpkg/_c.so"),
+                path=Path("/x/unstablepkg/_c.so"),
                 cpython=CPythonABIVerdict(intent=False, compliant=True),
                 torch=TorchABIVerdict(uses_torch=True, stable=False),
             ),
         ),
     )
     monkeypatch.setattr(cli, "inspect_package", lambda t: unstable)
-    rc = main(["evilpkg", "--check", "torch"])
+    rc = main(["unstablepkg", "--check", "torch"])
     assert rc == 1
     err = capsys.readouterr().err
-    assert "FAIL" in err and "evilpkg" in err
+    assert "FAIL" in err and "unstablepkg" in err
 
 
 def test_check_operational_error_wins_over_policy(monkeypatch):
@@ -101,3 +101,76 @@ def test_check_operational_error_wins_over_policy(monkeypatch):
     monkeypatch.setattr(cli, "inspect_package", boom)
     rc = main(["missing", "--check", "torch"])
     assert rc == 2
+
+
+def test_recorded_error_target_exits_2(capsys: pytest.CaptureFixture[str]):
+    """A nonexistent target records the error in the report (no raise); the CLI
+    must still exit 2, with or without --check, and name the culprit on stderr."""
+    assert main(["/nonexistent/path.so"]) == 2
+    err = capsys.readouterr().err
+    assert "inspection failed for /nonexistent/path.so" in err
+    assert main(["/nonexistent/path.so", "--check", "both"]) == 2
+
+
+def test_recorded_error_takes_precedence_over_policy(
+    monkeypatch, capsys: pytest.CaptureFixture[str]
+):
+    """A report that is BOTH a policy violation and carries a lib error exits 2,
+    not the policy code 1."""
+    from pathlib import Path
+
+    from torch_abi_audit import cli
+    from torch_abi_audit.cpython_abi import CPythonABIVerdict
+    from torch_abi_audit.report import ExtensionReport, PackageReport
+    from torch_abi_audit.torch_abi import TorchABIVerdict
+
+    broken_unstable = PackageReport(
+        "brokenpkg",
+        Path("/x/brokenpkg"),
+        extensions=(
+            ExtensionReport(
+                path=Path("/x/brokenpkg/_c.so"),
+                cpython=CPythonABIVerdict(intent=False, compliant=True),
+                torch=TorchABIVerdict(uses_torch=True, stable=False),
+                error="nm failed",
+            ),
+        ),
+    )
+    monkeypatch.setattr(cli, "inspect_package", lambda t: broken_unstable)
+    assert main(["brokenpkg", "--check", "torch"]) == 2
+
+
+def test_recorded_error_env_mode_exits_2(
+    monkeypatch, tmp_path, capsys: pytest.CaptureFixture[str]
+):
+    """A package error in env-scan mode also exits 2."""
+    from pathlib import Path
+
+    from torch_abi_audit import cli
+    from torch_abi_audit.cpython_abi import CPythonABIVerdict
+    from torch_abi_audit.report import (
+        EnvironmentReport,
+        ExtensionReport,
+        PackageReport,
+    )
+    from torch_abi_audit.torch_abi import TorchABIVerdict
+
+    env = EnvironmentReport(
+        site_packages=tmp_path,
+        packages=(
+            PackageReport(
+                "brokenpkg",
+                tmp_path / "brokenpkg",
+                bundled_libs=(
+                    ExtensionReport(
+                        path=tmp_path / "brokenpkg" / "lib.so",
+                        cpython=CPythonABIVerdict(intent=False, compliant=False),
+                        torch=TorchABIVerdict(uses_torch=False, stable=False),
+                        error="unreadable",
+                    ),
+                ),
+            ),
+        ),
+    )
+    monkeypatch.setattr(cli, "inspect_site_packages", lambda d: env)
+    assert main(["--site-packages", str(tmp_path)]) == 2
