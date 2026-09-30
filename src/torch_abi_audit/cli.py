@@ -4,17 +4,51 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from . import __version__
 from .inspect import inspect_package, inspect_site_packages
 from .report import (
+    CheckPolicy,
     EnvironmentReport,
     PackageReport,
+    collect_violations,
     format_environment_table,
     format_json,
     format_package_table,
+    format_violations,
 )
+
+
+def _check_policy(value: str) -> CheckPolicy:
+    try:
+        return CheckPolicy(value)
+    except ValueError:
+        choices = ", ".join(CheckPolicy)
+        raise argparse.ArgumentTypeError(
+            f"invalid policy {value!r} (choose from {choices})"
+        ) from None
+
+
+def _finalize_exit_code(
+    reports: Sequence[PackageReport], check: CheckPolicy | None, rc: int
+) -> int:
+    """Fold operational errors and ``--check`` violations into the exit code.
+
+    Precedence: operational error (2) > policy violation (1) > success (0).
+    ``rc`` carries any code already set by the caller (e.g. a raised error).
+    """
+    failed = [r.name for r in reports if r.has_error]
+    if failed:
+        print(f"error: inspection failed for {', '.join(failed)}", file=sys.stderr)
+        rc = 2
+    if check:
+        violations = collect_violations(reports, check)
+        if violations:
+            print(format_violations(violations, check), file=sys.stderr)
+            rc = rc or 1
+    return rc
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -52,11 +86,27 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Show offending symbols for unstable / non-compliant modules.",
     )
+    p.add_argument(
+        "--check",
+        type=_check_policy,
+        choices=list(CheckPolicy),
+        metavar="POLICY",
+        help=(
+            "CI gate: exit 1 if any inspected package violates POLICY. "
+            "'torch' fails on libtorch use without the stable ABI; 'abi3' fails "
+            "when a torch-using package isn't CPython abi3-compliant; 'both' "
+            "requires both. Operational errors still exit 2."
+        ),
+    )
     return p
 
 
 def _run_env_mode(
-    site_packages: Path | None, json_out: bool, show_all: bool, verbose: bool
+    site_packages: Path | None,
+    json_out: bool,
+    show_all: bool,
+    verbose: bool,
+    check: CheckPolicy | None,
 ) -> int:
     try:
         report = inspect_site_packages(site_packages)
@@ -67,10 +117,12 @@ def _run_env_mode(
         print(format_json(report))
     else:
         print(format_environment_table(report, verbose=verbose, show_all=show_all))
-    return 0
+    return _finalize_exit_code(report.packages, check, 0)
 
 
-def _run_target_mode(targets: list[str], json_out: bool, verbose: bool) -> int:
+def _run_target_mode(
+    targets: list[str], json_out: bool, verbose: bool, check: CheckPolicy | None
+) -> int:
     reports: list[PackageReport] = []
     rc = 0
     for t in targets:
@@ -92,7 +144,7 @@ def _run_target_mode(targets: list[str], json_out: bool, verbose: bool) -> int:
         for r in reports:
             print(format_package_table(r, verbose=verbose))
             print()
-    return rc
+    return _finalize_exit_code(reports, check, rc)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,8 +159,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.env or args.site_packages:
         sp = Path(args.site_packages).resolve() if args.site_packages else None
-        return _run_env_mode(sp, args.json, args.all, args.verbose)
-    return _run_target_mode(args.targets, args.json, args.verbose)
+        return _run_env_mode(sp, args.json, args.all, args.verbose, args.check)
+    return _run_target_mode(args.targets, args.json, args.verbose, args.check)
 
 
 if __name__ == "__main__":

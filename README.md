@@ -45,6 +45,9 @@ torch-abi-audit --site-packages /opt/venv/lib/python3.12/site-packages
 
 # JSON output for tooling
 torch-abi-audit --env --json | jq '.packages[] | select(.torch.uses_torch)'
+
+# CI gate: exit 1 if any package uses libtorch without the stable ABI
+torch-abi-audit mypkg --check torch
 ```
 
 ## Example output

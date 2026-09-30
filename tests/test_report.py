@@ -62,3 +62,65 @@ def test_label_no_intent_with_violations():
 def test_label_no_intent_no_capi():
     v = CPythonABIVerdict(intent=False, compliant=False, violations=())
     assert _cpython_label(v) == "not-abi3"
+
+
+# ---------------------------------------------------------------------------
+# --check policy
+
+
+def _pkg(name, *, torch_stable=None, cpython_compliant=None):
+    """Build a PackageReport whose verdicts match the requested policy state.
+
+    ``torch_stable`` None -> no torch use; True/False -> stable/unstable.
+    ``cpython_compliant`` None -> no extensions; True/False -> abi3 or not.
+    """
+    if torch_stable is None:
+        torch = TorchABIVerdict(uses_torch=False, stable=False)
+    else:
+        torch = TorchABIVerdict(uses_torch=True, stable=torch_stable)
+    exts = ()
+    if cpython_compliant is not None:
+        exts = (
+            ExtensionReport(
+                path=Path(f"/env/{name}/_c.so"),
+                cpython=CPythonABIVerdict(
+                    intent=cpython_compliant, compliant=cpython_compliant
+                ),
+                torch=torch,
+            ),
+        )
+    return PackageReport(name, Path(f"/env/{name}"), extensions=exts)
+
+
+def test_check_torch_flags_unstable_only():
+    from torch_abi_audit.report import CheckPolicy, collect_violations
+
+    pkgs = [
+        _pkg("unstable", torch_stable=False, cpython_compliant=True),
+        _pkg("stable", torch_stable=True, cpython_compliant=True),
+        _pkg("notorch", cpython_compliant=True),
+    ]
+    v = collect_violations(pkgs, CheckPolicy.TORCH)
+    assert [name for name, _ in v] == ["unstable"]
+
+
+def test_check_abi3_scoped_to_torch_users():
+    from torch_abi_audit.report import CheckPolicy, collect_violations
+
+    pkgs = [
+        _pkg("torch_no_abi3", torch_stable=True, cpython_compliant=False),
+        _pkg("notorch_no_abi3", cpython_compliant=False),  # ignored: no torch
+    ]
+    v = collect_violations(pkgs, CheckPolicy.ABI3)
+    assert [name for name, _ in v] == ["torch_no_abi3"]
+
+
+def test_check_both_unions_reasons():
+    from torch_abi_audit.report import CheckPolicy, collect_violations
+
+    pkgs = [_pkg("bad", torch_stable=False, cpython_compliant=False)]
+    v = collect_violations(pkgs, CheckPolicy.BOTH)
+    assert len(v) == 1
+    name, reasons = v[0]
+    assert name == "bad"
+    assert len(reasons) == 2
