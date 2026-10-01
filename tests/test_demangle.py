@@ -17,12 +17,11 @@ def test_demangles_itanium_mangled_name():
 
 
 def test_preserves_glibcxx_version_suffix():
-    # The GNU symbol-versioning suffix is split off before demangling and
-    # re-attached afterwards, since pycxxfilt rejects it as invalid input.
-    assert (
-        demangle_symbol("_Z3fooi@GLIBCXX_3.4")
-        == "foo(int)@GLIBCXX_3.4"
-    )
+    # pycxxfilt (>= 1.2.0) demangles IA64 GNU symbol-versioned names directly
+    # and keeps the version suffix.
+    assert demangle_symbol("_Z3fooi@GLIBCXX_3.4") == "foo(int)@GLIBCXX_3.4"
+    # The "@@" default-version marker is preserved too.
+    assert demangle_symbol("_Z3fooi@@GLIBCXX_3.4") == "foo(int)@@GLIBCXX_3.4"
 
 
 def test_unrecognised_mangled_name_falls_back_to_input():
