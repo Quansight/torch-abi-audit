@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+- Add `--check {torch,abi3,both}` for CI gating, with exit code 1 for ABI
+  policy violations. The `abi3` policy checks CPython ABI compliance of
+  extension modules in torch-using packages.
+- Return exit code 2 for inspection errors recorded on packages or individual
+  libraries in both target and environment scans, with or without `--check`.
+  Operational errors take precedence over policy violations.
+- Document the CI gate policies and exit codes, with usage examples.
+- Require pycxxfilt 1.2.0 or newer and use its native GNU symbol-version
+  support, replacing the local workaround while preserving `@` and `@@`
+  suffixes in demangled names.
+
 ## 0.2.0
 
 - Report the minimum PyTorch version required by a library's stable C-shim
