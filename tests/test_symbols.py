@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from toolchain import extension_suffix
 from torch_abi_audit import inspect_package
 from torch_abi_audit.symbols import (
     extract_undefined_symbols,
@@ -16,6 +16,9 @@ from torch_abi_audit.symbols import (
     is_extension_module,
     is_module_entrypoint,
 )
+
+# A scan picks up the host's suffixes, so the throwaway file has to match one.
+_LIBRARY_SUFFIX = ".pyd" if sys.platform == "win32" else ".so"
 
 
 def test_pyinit_symbol_present(cpython_stable_so: Path):
@@ -53,7 +56,7 @@ def test_pymodexport_package_classification(
     defined: bool,
 ):
     """Only a defined export hook makes a library a Python extension."""
-    library = tmp_path / f"example{extension_suffix()}"
+    library = tmp_path / f"example{_LIBRARY_SUFFIX}"
     library.touch()
     symbol = f"{prefix}example"
 

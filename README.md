@@ -154,6 +154,16 @@ uv run pyrefly check             # type-check
 uv run zensical serve docs/      # local docs server
 ```
 
+Some tests compile small C/C++ extension modules and inspect the result. On
+Linux and macOS they use `cc`/`c++` (or `gcc`/`g++`) and skip when no compiler
+is installed. On Windows they are built with MSVC, so `pytest` has to run from a
+[Visual Studio developer prompt](https://learn.microsoft.com/cpp/build/building-on-the-command-line)
+— or from any shell where the MSVC environment has been initialised, which puts
+`cl` and `dumpbin` on `PATH` and sets `INCLUDE`/`LIB`. A missing `cl` fails those
+tests instead of skipping them. The fixtures also link the interpreter's import
+library (`python3.lib` for limited-API builds), which a normal Windows CPython
+installation provides.
+
 The minimum-version table is vendored from PyTorch; refresh it with
 `python scripts/update_shim_versions.py`. See
 `src/torch_abi_audit/data/README.md`.

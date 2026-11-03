@@ -21,10 +21,11 @@
   and quietly reporting the library as torch-free. Symbol names longer than
   4096 characters are no longer treated as corruption.
 - Demangle MSVC C++ names (`?...`) in addition to Itanium ones.
-- Add Windows to the test matrix, building the C/C++ fixtures with MSVC (or a
-  GNU driver where that is all that exists) instead of assuming a Unix
-  toolchain. CI now fails when a runner has no discoverable compiler, rather
-  than silently skipping every fixture test.
+- Add Windows to the test matrix. The C/C++ fixtures are built with MSVC, so a
+  Windows run has to start from a Visual Studio developer prompt (or a shell
+  with the MSVC environment initialised); a missing `cl` fails those tests
+  instead of skipping them. Linux and macOS keep their existing compiler
+  discovery and skip behaviour.
 
 ## 0.3.0
 

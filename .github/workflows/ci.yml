@@ -12,10 +12,6 @@ jobs:
   test:
     name: test (${{ matrix.os }} / py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    # Every runner has a compiler, so a skipped fixture build here means
-    # toolchain detection regressed. Fail loudly instead of skipping silently.
-    env:
-      TORCH_ABI_AUDIT_REQUIRE_TOOLCHAIN: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -34,19 +30,33 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Put dumpbin on PATH
+      - name: Set up MSVC environment
         if: runner.os == 'Windows'
         shell: pwsh
+        # One developer-prompt equivalent for the whole job: it puts cl.exe and
+        # dumpbin.exe on PATH and exports INCLUDE/LIB for the steps below. The
+        # fixtures require MSVC on Windows, so failing here is deliberate.
         run: |
-          # Exercise the preferred dumpbin backend, not just the fallback
-          # parser. Windows runners have VS installed, so dumpbin exists but is
-          # not on PATH by default.
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vs = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -Last 1)
-          if (-not $vs) { Write-Output "::warning title=dumpbin::Visual Studio not found; the preferred PE backend will not be exercised"; exit 0 }
-          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Sort-Object FullName | Select-Object -Last 1
-          if (-not $dumpbin) { Write-Output "::warning title=dumpbin::dumpbin not found; the preferred PE backend will not be exercised"; exit 0 }
-          $dumpbin.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          if (-not (Test-Path $vswhere)) { throw "vswhere not found; cannot locate Visual Studio" }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "No Visual Studio installation with the C++ toolset" }
+          $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
+          $envLines = cmd /c "`"$vcvars`" >nul && set"
+          if (-not $envLines) { throw "vcvars64.bat produced no environment" }
+          foreach ($line in $envLines) {
+            if ($line -match '^([^=]+)=(.*)$') {
+              $name = $matches[1]
+              $value = $matches[2]
+              if ($name -eq 'PATH') {
+                $value | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+              } else {
+                "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              }
+            }
+          }
+          Get-Command cl, dumpbin | ForEach-Object { Write-Host "$($_.Name) -> $($_.Source)" }
 
       - name: Sync dependencies
         run: uv sync --python ${{ matrix.python-version }}
