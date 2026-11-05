@@ -64,10 +64,11 @@ jobs:
           Get-Command cl, dumpbin | ForEach-Object { Write-Host "$($_.Name) -> $($_.Source)" }
 
       - name: Sync dependencies
-        run: uv sync --python ${{ matrix.python-version }}
+        # Docs dependencies are unnecessary here and may not build on new Python versions.
+        run: uv sync --no-dev --group test --python ${{ matrix.python-version }}
 
       - name: Run pytest
-        run: uv run pytest
+        run: uv run --no-dev --group test --python ${{ matrix.python-version }} pytest
 
   typecheck:
     name: typecheck (pyrefly)

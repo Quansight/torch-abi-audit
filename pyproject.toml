@@ -72,8 +72,11 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 
 [dependency-groups]
-dev = [
+test = [
     "pytest>=8",
+]
+dev = [
+    {include-group = "test"},
     "pyrefly",
     "zensical",
 ]
