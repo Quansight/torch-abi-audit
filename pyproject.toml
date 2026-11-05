@@ -17,6 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
@@ -64,14 +65,18 @@ include = [
 [tool.pyrefly]
 project-includes = ["src", "tests"]
 python-version = "3.11"
+search-path = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 
 [dependency-groups]
-dev = [
+test = [
     "pytest>=8",
+]
+dev = [
+    {include-group = "test"},
     "pyrefly",
     "zensical",
 ]

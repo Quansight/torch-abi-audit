@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- Support Windows: PE/COFF import and export tables are parsed directly, so
+  `.pyd` extension modules and bundled `.dll` libraries (e.g.
+  `torch/lib/torch_cpu.dll`) are audited like their ELF and Mach-O
+  counterparts. Directory scans collect `.pyd`/`.dll` on Windows and keep
+  their existing `.so`/`.pyd`/`.dylib` set on Linux and macOS. `dumpbin` is
+  used when it is on `PATH`, with the built-in parser as the fallback, so no
+  external tool is required.
+- Check the Python DLL a Windows extension links: a Stable ABI build must use
+  `python3.dll`, and one linked against a version-specific `python3XX.dll` is
+  reported as non-compliant even when all of its symbols are stable.
+- Inspect a Windows binary by path on any host. The built-in PE parser is
+  self-contained, so a `.pyd`/`.dll` named explicitly is read from Linux or
+  macOS too; ELF and Mach-O inspection still relies on the host's `nm`, so this
+  is not a general cross-platform scan.
+- Keep the symbols recovered from a damaged table and report the partial read
+  as an inspection error (exit `2`), instead of discarding the whole directory
+  and quietly reporting the library as torch-free. Symbol names longer than
+  4096 characters are no longer treated as corruption.
+- Demangle MSVC C++ names (`?...`) in addition to Itanium ones.
+- Add Windows to the test matrix. The C/C++ fixtures are built with MSVC, so a
+  Windows run has to start from a Visual Studio developer prompt (or a shell
+  with the MSVC environment initialised); a missing `cl` fails those tests
+  instead of skipping them. Linux and macOS keep their existing compiler
+  discovery and skip behaviour.
+
 ## 0.3.0
 
 - Add `--check {torch,abi3,both}` for CI gating, with exit code 1 for ABI

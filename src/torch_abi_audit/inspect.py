@@ -9,9 +9,11 @@ from pathlib import Path
 from . import cpython_abi, torch_abi
 from .report import EnvironmentReport, ExtensionReport, PackageReport
 from .symbols import (
-    extract_undefined_symbols,
+    ALL_LIBRARY_SUFFIXES,
     find_compiled_libraries,
     is_extension_module,
+    is_scannable_library,
+    read_symbols,
 )
 
 _SKIP_SUFFIXES = (".dist-info", ".egg-info", ".data")
@@ -19,10 +21,14 @@ _SKIP_NAMES = ("__pycache__",)
 
 
 def inspect_extension(path: Path) -> ExtensionReport:
-    """Inspect a single extension module file."""
+    """Inspect a single extension module file.
+
+    A partially readable symbol table still produces a verdict from the names
+    that were recovered, and records the failure so the caller can report it.
+    """
     path = Path(path).resolve()
     try:
-        symbols = extract_undefined_symbols(path)
+        symbols = read_symbols(path)
     except RuntimeError as exc:
         return ExtensionReport(
             path=path,
@@ -32,8 +38,12 @@ def inspect_extension(path: Path) -> ExtensionReport:
         )
     return ExtensionReport(
         path=path,
-        cpython=cpython_abi.classify_symbols(symbols, path.name),
-        torch=torch_abi.classify_symbols(symbols),
+        cpython=cpython_abi.classify_symbols(
+            symbols.imports, path.name, imported_libraries=symbols.libraries
+        ),
+        torch=torch_abi.classify_symbols(symbols.imports),
+        error=symbols.error,
+        incomplete=symbols.incomplete,
     )
 
 
@@ -50,7 +60,13 @@ def _resolve_import_name(name: str) -> Path:
 
 
 def inspect_package(name_or_path: str | Path) -> PackageReport:
-    """Inspect an installed package by import name, or a path to a file/directory."""
+    """Inspect an installed package by import name, or a path to a file/directory.
+
+    A directory scan collects the current host's library formats. A file named
+    explicitly is inspected whatever platform built it, so a Windows
+    ``.pyd``/``.dll`` can be checked from Linux or macOS; that relies on the
+    built-in PE parser, not on cross-platform tooling.
+    """
     target: Path
     name: str
     if isinstance(name_or_path, Path) or (
@@ -77,7 +93,8 @@ def inspect_package(name_or_path: str | Path) -> PackageReport:
         name = str(name_or_path)
 
     if target.is_file():
-        if not target.name.endswith((".so", ".pyd", ".dylib")):
+        # An explicitly named file is inspected whatever platform built it.
+        if not target.name.endswith(ALL_LIBRARY_SUFFIXES):
             return PackageReport(
                 name=name,
                 root=target.parent,
@@ -131,7 +148,7 @@ def inspect_site_packages(directory: Path | None = None) -> EnvironmentReport:
                     bundled_libs=bundled,
                 )
             )
-        elif entry.is_file() and entry.name.endswith((".so", ".pyd", ".dylib")):
+        elif entry.is_file() and is_scannable_library(entry):
             report = inspect_extension(entry)
             if is_extension_module(entry):
                 packages.append(

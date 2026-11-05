@@ -121,7 +121,10 @@ def _run_env_mode(
 
 
 def _run_target_mode(
-    targets: list[str], json_out: bool, verbose: bool, check: CheckPolicy | None
+    targets: list[str],
+    json_out: bool,
+    verbose: bool,
+    check: CheckPolicy | None,
 ) -> int:
     reports: list[PackageReport] = []
     rc = 0

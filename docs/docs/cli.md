@@ -24,7 +24,7 @@ A `TARGET` can be:
 
 - An importable name like `torchvision` — resolved via `importlib.util.find_spec`.
 - A path to an installed package directory (recursive scan).
-- A path to a single `.so` / `.pyd` / `.dylib` file.
+- A path to a single `.so` / `.pyd` / `.dylib` / `.dll` file.
 
 ## Output
 
@@ -36,6 +36,12 @@ By default the CLI prints a human-readable table.
   extensions.
 - `--all` makes env-scan output include packages with no torch use (hidden
   by default to keep the table focused on potentially-problematic packages).
+
+Directory scans collect the library formats of the host: `.so` / `.pyd` /
+`.dylib` on Linux and macOS, `.pyd` / `.dll` on Windows. A file named directly
+on the command line is inspected whatever platform built it, so a Windows
+binary can be checked from Linux or macOS — that path uses the built-in PE
+parser and needs no external tools.
 
 Package headers carry a `Min torch:` line, mirrored by the env-scan
 `MIN-TORCH` column: the lowest torch release that supplies every stable shim symbol the
@@ -267,6 +273,11 @@ via `STABLE_TORCH_LIBRARY` (e.g. `torchaudio`) has no CPython ABI verdict, so
 `abi3` / `both` never flag it -- the CPython limited API applies only to
 modules loaded by Python's importer, not to `dlopen`-ed shared libraries.
 
+On Windows the check also requires the module to link `python3.dll`, the
+version-agnostic stable ABI forwarder. A module that links `python314.dll`
+(and friends) is tied to one interpreter version even when every symbol it
+uses is stable, so it fails `abi3`.
+
 ```bash
 torch-abi-audit mypkg --check torch          # gate one package
 torch-abi-audit --env --check both           # gate the whole environment
@@ -283,7 +294,10 @@ The CLI reports verdicts via stdout / JSON; it returns:
 - `1` when `--check` is given and a policy violation is found.
 - `2` on operational errors (missing `nm`, unknown import name, unreadable
   path, or a library that fails to parse) -- whether the failure is raised or
-  recorded in a report's `error` field.
+  recorded in a report's `error` field. A **partly** readable library counts:
+  the verdict is computed from the symbols that were recovered and reported as
+  normal, but the run still exits `2`, because an audit that could not see
+  every symbol must not report success.
 
 Without `--check`, the tool is safe to run interactively without `set -e`
 surprises: it only exits non-zero on operational errors. As an alternative to

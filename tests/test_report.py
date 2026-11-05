@@ -64,6 +64,29 @@ def test_label_no_intent_no_capi():
     assert _cpython_label(v) == "not-abi3"
 
 
+def test_label_version_pinned_dll():
+    """Stable symbols but a version-specific Python DLL is its own diagnosis."""
+    v = CPythonABIVerdict(
+        intent=True, compliant=False, violations=(), python_dll="python314.dll"
+    )
+    assert _cpython_label(v) == "abi3-dll-version-pinned"
+
+
+def test_label_uses_the_shared_stable_dll_rule():
+    """The label must agree with the classifier for a name carrying a path.
+
+    ``cpython_abi.is_stable_python_dll`` strips the directory; a local string
+    comparison here would call the forwarder version-pinned.
+    """
+    v = CPythonABIVerdict(
+        intent=True,
+        compliant=False,
+        violations=(),
+        python_dll=r"C:\Windows\System32\python3.dll",
+    )
+    assert _cpython_label(v) == "abi3-tagged-no-capi"
+
+
 # ---------------------------------------------------------------------------
 # --check policy
 

@@ -381,6 +381,9 @@ dev = [
     { name = "pytest" },
     { name = "zensical" },
 ]
+test = [
+    { name = "pytest" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -394,6 +397,7 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "zensical" },
 ]
+test = [{ name = "pytest", specifier = ">=8" }]
 
 [[package]]
 name = "zensical"

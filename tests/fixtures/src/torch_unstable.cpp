@@ -2,6 +2,8 @@
 #include <ATen/Tensor.h>
 #include <c10/core/Device.h>
 
-extern "C" int64_t fixture_numel(at::Tensor *t) {
+#include "fixture_export.h"
+
+extern "C" FIXTURE_EXPORT int64_t fixture_numel(at::Tensor *t) {
     return t->numel();
 }

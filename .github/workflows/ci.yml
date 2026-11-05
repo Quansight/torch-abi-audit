@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -30,11 +30,45 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        # One developer-prompt equivalent for the whole job: it puts cl.exe and
+        # dumpbin.exe on PATH and exports INCLUDE/LIB for the steps below. The
+        # fixtures require MSVC on Windows, so failing here is deliberate.
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere not found; cannot locate Visual Studio" }
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "No Visual Studio installation with the C++ toolset" }
+          $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) { throw "vcvars64.bat not found at $vcvars" }
+          $envLines = cmd /c "`"$vcvars`" >nul && set"
+          if (-not $envLines) { throw "vcvars64.bat produced no environment" }
+          foreach ($line in $envLines) {
+            if ($line -match '^([^=]+)=(.*)$') {
+              $name = $matches[1]
+              $value = $matches[2]
+              if ($name -eq 'PATH') {
+                $value | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+              } else {
+                "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+              }
+            }
+          }
+
+      - name: Verify MSVC environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-Command cl, dumpbin | ForEach-Object { Write-Host "$($_.Name) -> $($_.Source)" }
+
       - name: Sync dependencies
-        run: uv sync --python ${{ matrix.python-version }}
+        # Docs dependencies are unnecessary here and may not build on new Python versions.
+        run: uv sync --no-dev --group test --python ${{ matrix.python-version }}
 
       - name: Run pytest
-        run: uv run pytest
+        run: uv run --no-dev --group test --python ${{ matrix.python-version }} pytest
 
   typecheck:
     name: typecheck (pyrefly)

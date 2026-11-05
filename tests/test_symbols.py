@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,9 @@ from torch_abi_audit.symbols import (
     is_extension_module,
     is_module_entrypoint,
 )
+
+# A scan picks up the host's suffixes, so the throwaway file has to match one.
+_LIBRARY_SUFFIX = ".pyd" if sys.platform == "win32" else ".so"
 
 
 def test_pyinit_symbol_present(cpython_stable_so: Path):
@@ -52,7 +56,7 @@ def test_pymodexport_package_classification(
     defined: bool,
 ):
     """Only a defined export hook makes a library a Python extension."""
-    library = tmp_path / "example.so"
+    library = tmp_path / f"example{_LIBRARY_SUFFIX}"
     library.touch()
     symbol = f"{prefix}example"
 
@@ -130,3 +134,26 @@ def test_extract_undefined_symbols_strips_macos_prefix(cpython_stable_so: Path):
     # Known stable data symbols look like "_Py_NoneStruct" with exactly one
     # underscore. Anything starting with two is a Mach-O artifact we failed to strip.
     assert bad == [], f"unstripped Mach-O underscores: {bad[:5]}"
+
+
+def test_torch_stable_fixture_is_classified_stable(torch_stable_so: Path):
+    """A real binary built against the stable C shim only.
+
+    Skips when torch isn't importable, which is the case on CI.
+    """
+    report = inspect_package(torch_stable_so)
+
+    assert report.extensions == ()
+    (lib,) = report.bundled_libs
+    assert lib.torch.uses_torch is True
+    assert lib.torch.stable is True
+    assert lib.torch.min_torch_version is not None
+
+
+def test_torch_unstable_fixture_is_classified_unstable(torch_unstable_so: Path):
+    report = inspect_package(torch_unstable_so)
+
+    (lib,) = report.bundled_libs
+    assert lib.torch.uses_torch is True
+    assert lib.torch.stable is False
+    assert any("at::" in sym for sym in lib.torch.unstable_symbols)

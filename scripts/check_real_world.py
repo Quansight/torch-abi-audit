@@ -8,14 +8,15 @@ Usage::
 
     python scripts/check_real_world.py [--keep] [--report PATH]
 
-Linux only. Requires ``uv`` on PATH. The install is heavy (torch alone is
-roughly 2 GB) and runs against the public PyPI index.
+Linux, macOS and Windows. Requires ``uv`` on PATH. The install is heavy (torch
+alone is roughly 2 GB) and runs against the public PyPI index.
 
 Output columns:
     EXPECTED / ACTUAL  -- ``torch_verdict`` from the tool.
     EXTS               -- Python extension modules (``PyInit_*`` defined).
-    BUNDLED            -- other compiled .so files shipped in the package
-                          (e.g. torch/lib/libtorch_python.so, libtorchcodec_core*.so);
+    BUNDLED            -- other compiled libraries shipped in the package
+                          (e.g. torch/lib/libtorch_python.so,
+                          torch/lib/torch_cpu.dll, libtorchcodec_core*.so);
                           loaded via dlopen / STABLE_TORCH_LIBRARY rather than
                           Python's importer. The verdict considers both lists.
     STABLE / UNSTABLE  -- counts of libs (extensions + bundled) classified each way.
@@ -83,6 +84,13 @@ def _die(msg: str, code: int = 2) -> int:
     return code
 
 
+def venv_python(venv: Path) -> Path:
+    """Path to the interpreter inside ``venv`` (layout differs on Windows)."""
+    if sys.platform == "win32":
+        return venv / "Scripts" / "python.exe"
+    return venv / "bin" / "python"
+
+
 def _setup_venv(venv: Path) -> int:
     if shutil.which("uv") is None:
         return _die("uv not found on PATH")
@@ -93,7 +101,7 @@ def _setup_venv(venv: Path) -> int:
 
 
 def _install(venv: Path, repo: Path) -> int:
-    py = str(venv / "bin" / "python")
+    py = str(venv_python(venv))
     proc = _run(
         [
             "uv", "pip", "install",
@@ -113,7 +121,7 @@ def _install(venv: Path, repo: Path) -> int:
 
 
 def _inspect(venv: Path) -> dict[str, dict[str, object]] | None:
-    py = str(venv / "bin" / "python")
+    py = str(venv_python(venv))
     proc = _run([py, "-c", INNER, *EXPECTED.keys()], capture=True)
     if proc.returncode != 0:
         print(proc.stdout, end="")
@@ -165,9 +173,6 @@ def main() -> int:
     ap.add_argument("--report", metavar="PATH", type=Path,
                     help="write the full inner-JSON report to PATH")
     args = ap.parse_args()
-
-    if sys.platform != "linux":
-        return _die(f"only Linux is supported (got {sys.platform})")
 
     repo = Path(__file__).resolve().parent.parent
     venv = Path(tempfile.mkdtemp(prefix="ctsabi-rw-"))

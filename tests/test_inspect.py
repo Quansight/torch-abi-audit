@@ -3,47 +3,42 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
-
-import pytest
 
 from torch_abi_audit import inspect_package
 from torch_abi_audit.report import PackageReport
 
-
-def _build_bundled_lib(src_dir: Path, out: Path) -> None:
-    """Build a tiny C library WITHOUT PyInit_* — a stand-in for a torch plugin."""
-    src = src_dir / "bundled.c"
-    src.write_text(
-        "int bundled_call(int x) { return x + 1; }\n", encoding="utf-8"
-    )
-    cc = shutil.which("cc") or shutil.which("gcc")
-    if cc is None:
-        pytest.skip("no C compiler found")
-    proc = subprocess.run(
-        [cc, "-shared", "-fPIC", "-O0", "-o", str(out), str(src)],
-        capture_output=True, text=True, check=False,
-    )
-    if proc.returncode != 0:
-        pytest.skip(f"compile failed: {proc.stderr.strip()[:200]}")
+# A compiled extension module and a bundled library need the host's suffixes to
+# be picked up by a directory scan; the classifier under test does not care
+# which ones.
+_EXT_SUFFIX = ".pyd" if sys.platform == "win32" else ".so"
+_BUNDLED_SUFFIX = ".dll" if sys.platform == "win32" else ".so"
 
 
 def test_inspect_package_splits_extensions_and_bundled(
-    tmp_path: Path, cpython_unstable_so: Path
+    tmp_path: Path,
+    cpython_unstable_so: Path,
+    compile_library: Callable[[Path, Path], Path],
 ) -> None:
-    """A directory with one PyInit-bearing .so and one bundled lib should
+    """A directory with one PyInit-bearing library and one bundled lib should
     produce a one-of-each split."""
     pkg = tmp_path / "fakepkg"
     pkg.mkdir()
-    shutil.copy(cpython_unstable_so, pkg / "extension.cpython-311-x86_64-linux-gnu.so")
-    _build_bundled_lib(tmp_path, pkg / "libfake.so")
+    bundled_name = f"libfake{_BUNDLED_SUFFIX}"
+    shutil.copy(cpython_unstable_so, pkg / f"extension{_EXT_SUFFIX}")
+
+    # A tiny C library WITHOUT PyInit_* — a stand-in for a torch plugin.
+    src = tmp_path / "bundled.c"
+    src.write_text("int bundled_call(int x) { return x + 1; }\n", encoding="utf-8")
+    compile_library(src, pkg / bundled_name)
 
     report: PackageReport = inspect_package(pkg)
     assert len(report.extensions) == 1
     assert len(report.bundled_libs) == 1
     assert report.extensions[0].path.name.startswith("extension.")
-    assert report.bundled_libs[0].path.name == "libfake.so"
+    assert report.bundled_libs[0].path.name == bundled_name
     # Neither uses torch, so the package roll-up is no-torch even with the
     # bundled lib counted.
     assert report.torch_verdict == "no-torch"

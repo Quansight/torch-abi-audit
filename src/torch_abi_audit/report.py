@@ -9,19 +9,26 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from .cpython_abi import CPythonABIVerdict
+from .cpython_abi import CPythonABIVerdict, is_stable_python_dll
 from .torch_abi import TorchABIVerdict
 from .torch_versions import parse_version
 
 
 @dataclass(frozen=True, slots=True)
 class ExtensionReport:
-    """Per-extension-module result."""
+    """Per-extension-module result.
+
+    ``error`` means nothing could be read, so the verdicts are placeholders.
+    ``incomplete`` means part of the symbol table was unreadable: the verdicts
+    come from the names that were recovered, but the read must not be treated as
+    clean — a damaged table can only hide references, never invent them.
+    """
 
     path: Path
     cpython: CPythonABIVerdict
     torch: TorchABIVerdict
     error: str | None = None
+    incomplete: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +56,14 @@ class PackageReport:
 
     @property
     def has_error(self) -> bool:
-        """True if this package or any of its libraries failed to inspect."""
-        return bool(self.error) or any(e.error for e in self._all_libs)
+        """True if this package or any of its libraries failed to inspect.
+
+        A partial read counts: an audit that could not see every symbol must not
+        report success, or a damaged image becomes a way to pass the gate.
+        """
+        return bool(self.error) or any(
+            e.error or e.incomplete for e in self._all_libs
+        )
 
     @property
     def torch_verdict(self) -> str:
@@ -214,12 +227,15 @@ def _cpython_label(verdict: CPythonABIVerdict) -> str:
 
     Distinguishes between an extension with concrete violations vs. one whose
     filename carries an ``abi3`` tag but doesn't reference the CPython C API
-    at all (e.g. a torch plugin loaded via ``STABLE_TORCH_LIBRARY``).
+    at all (e.g. a torch plugin loaded via ``STABLE_TORCH_LIBRARY``), vs. one
+    that uses only stable symbols but links a version-specific ``python3XX.dll``.
     """
     if verdict.compliant:
         return "abi3-ok"
     if verdict.violations:
         return "abi3-tagged-violations" if verdict.intent else "uses-private-api"
+    if is_stable_python_dll(verdict.python_dll) is False:
+        return "abi3-dll-version-pinned"
     if verdict.intent:
         return "abi3-tagged-no-capi"
     return "not-abi3"
@@ -238,6 +254,8 @@ def _format_extension_lines(ext: ExtensionReport, root: Path, verbose: bool) -> 
             prefix = ">=" if ext.torch.unknown_shim_symbols else ""
             line += f"  min-torch={prefix}{ext.torch.min_torch_version}"
     out = [line]
+    if ext.incomplete:
+        out.append(f"        incomplete: {ext.incomplete}")
     if verbose:
         if ext.torch.version_defining_symbols:
             reqs = ", ".join(ext.torch.version_defining_symbols[:5])
@@ -264,6 +282,12 @@ def _format_extension_lines(ext: ExtensionReport, root: Path, verbose: bool) -> 
             out.append(f"        cpython violation: {s}")
         if len(ext.cpython.violations) > 15:
             out.append(f"        ... {len(ext.cpython.violations) - 15} more")
+        dll = ext.cpython.python_dll
+        if dll and is_stable_python_dll(dll) is False:
+            out.append(
+                f"        links {dll} instead of python3.dll, so it is tied to "
+                "one interpreter version"
+            )
     return out
 
 

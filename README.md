@@ -3,10 +3,10 @@
 Audit Python extension modules for compliance with the
 [PyTorch Stable ABI](https://docs.pytorch.org/docs/main/notes/libtorch_stable_abi.html)
 (`aoti_torch_*` C shim and `torch::stable::*` / `torch::headeronly::*` C++
-wrappers, introduced in PyTorch 2.9). Walks every `.so` shipped in a
-package — both Python extension modules and bundled internal libraries —
-and reports which stick to the stable surface and which reach into
-`at::` / `c10::` / `torch::jit::` internals.
+wrappers, introduced in PyTorch 2.9). Walks every compiled library shipped in a
+package — `.so` / `.pyd` / `.dylib` / `.dll`, covering both Python extension
+modules and bundled internal libraries — and reports which stick to the stable
+surface and which reach into `at::` / `c10::` / `torch::jit::` internals.
 
 The audit also reports the **minimum torch version** each library needs: every
 `aoti_torch_*` / `torch_*` C-shim entry point was introduced in some release,
@@ -26,7 +26,13 @@ compliance, since the data is right there.
 pip install torch-abi-audit
 ```
 
-Linux and macOS only for now (Windows requires `dumpbin` support — not yet implemented).
+Linux, macOS and Windows. On Windows the PE import/export tables are read by a
+built-in parser, so nothing extra is needed; `dumpbin` is used when it happens
+to be on `PATH` (inside a Visual Studio developer prompt). Directory scans
+collect the host's library formats — `.so`/`.pyd`/`.dylib` on Linux and macOS,
+`.pyd`/`.dll` on Windows — and because the PE parser is self-contained, a
+Windows binary named explicitly on the command line can also be inspected from
+Linux or macOS.
 
 ## CLI usage
 
@@ -34,7 +40,7 @@ Linux and macOS only for now (Windows requires `dumpbin` support — not yet imp
 # Inspect an installed PyTorch ecosystem package by import name
 torch-abi-audit torchaudio
 
-# Inspect a path to an installed package or a single .so
+# Inspect a path to an installed package or a single .so / .pyd / .dll
 torch-abi-audit /path/to/site-packages/somepkg
 
 # Inspect every package in the current environment's site-packages
@@ -133,7 +139,7 @@ print(report.torch_verdict)             # "torch-stable" | "torch-unstable" | "n
 print(report.min_torch_version)         # e.g. "2.10.0", or None if no stable shims used
 
 # `extensions` holds Python extension modules; `bundled_libs` holds the
-# rest of the compiled .so files (libtorch_python.so, STABLE_TORCH_LIBRARY
+# rest of the compiled libraries (libtorch_python.so, STABLE_TORCH_LIBRARY
 # plugins, etc.). Both contribute to the verdict.
 for lib in (*report.extensions, *report.bundled_libs):
     print(lib.path, lib.torch.stable, lib.torch.min_torch_version, lib.cpython.compliant)
@@ -147,6 +153,16 @@ uv run pytest                    # run tests
 uv run pyrefly check             # type-check
 uv run zensical serve docs/      # local docs server
 ```
+
+Some tests compile small C/C++ extension modules and inspect the result. On
+Linux and macOS they use `cc`/`c++` (or `gcc`/`g++`) and skip when no compiler
+is installed. On Windows they are built with MSVC, so `pytest` has to run from a
+[Visual Studio developer prompt](https://learn.microsoft.com/cpp/build/building-on-the-command-line)
+— or from any shell where the MSVC environment has been initialised, which puts
+`cl` and `dumpbin` on `PATH` and sets `INCLUDE`/`LIB`. A missing `cl` fails those
+tests instead of skipping them. The fixtures also link the interpreter's import
+library (`python3.lib` for limited-API builds), which a normal Windows CPython
+installation provides.
 
 The minimum-version table is vendored from PyTorch; refresh it with
 `python scripts/update_shim_versions.py`. See

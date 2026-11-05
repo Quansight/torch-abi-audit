@@ -32,3 +32,9 @@ docs/.cache/
 *.so
 *.dylib
 *.pyd
+*.dll
+# MSVC writes these next to the object it builds
+*.obj
+*.exp
+*.lib
+*.ilk

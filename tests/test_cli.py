@@ -85,7 +85,7 @@ def test_check_torch_fails_on_unstable(monkeypatch, capsys: pytest.CaptureFixtur
             ),
         ),
     )
-    monkeypatch.setattr(cli, "inspect_package", lambda t: unstable)
+    monkeypatch.setattr(cli, "inspect_package", lambda t, **kw: unstable)
     rc = main(["unstablepkg", "--check", "torch"])
     assert rc == 1
     err = capsys.readouterr().err
@@ -95,7 +95,7 @@ def test_check_torch_fails_on_unstable(monkeypatch, capsys: pytest.CaptureFixtur
 def test_check_operational_error_wins_over_policy(monkeypatch):
     from torch_abi_audit import cli
 
-    def boom(t):
+    def boom(t, **kwargs):
         raise RuntimeError("nope")
 
     monkeypatch.setattr(cli, "inspect_package", boom)
@@ -136,7 +136,7 @@ def test_recorded_error_takes_precedence_over_policy(
             ),
         ),
     )
-    monkeypatch.setattr(cli, "inspect_package", lambda t: broken_unstable)
+    monkeypatch.setattr(cli, "inspect_package", lambda t, **kw: broken_unstable)
     assert main(["brokenpkg", "--check", "torch"]) == 2
 
 
@@ -172,5 +172,5 @@ def test_recorded_error_env_mode_exits_2(
             ),
         ),
     )
-    monkeypatch.setattr(cli, "inspect_site_packages", lambda d: env)
+    monkeypatch.setattr(cli, "inspect_site_packages", lambda d, **kw: env)
     assert main(["--site-packages", str(tmp_path)]) == 2

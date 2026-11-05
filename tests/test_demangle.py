@@ -16,6 +16,17 @@ def test_demangles_itanium_mangled_name():
     assert demangle_symbol("_Z3fooi") == "foo(int)"
 
 
+def test_demangles_msvc_mangled_name():
+    """Windows binaries use the MSVC scheme, which pycxxfilt also covers."""
+    demangled = demangle_symbol("?dim@Tensor@stable@torch@@QEBA_JXZ")
+    assert "torch::stable::Tensor::dim" in demangled
+
+
+def test_msvc_unrecognised_name_falls_back_to_input():
+    junk = "?notreallymangled"
+    assert demangle_symbol(junk) == junk
+
+
 def test_preserves_glibcxx_version_suffix():
     # pycxxfilt (>= 1.2.0) demangles IA64 GNU symbol-versioned names directly
     # and keeps the version suffix.

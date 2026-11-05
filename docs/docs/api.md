@@ -21,6 +21,17 @@ from torch_abi_audit import (
 Inspect a single extension module file. Returns an `ExtensionReport` even for
 unreadable files (the `error` field carries the message).
 
+A file the tool understands the format of but cannot read completely — a
+damaged PE import or export directory, for instance — still yields a verdict
+built from the symbols that *were* recovered, with `incomplete` carrying the
+reason. Checking `report.has_error` on the enclosing `PackageReport` treats such
+a read as a failure, and the CLI exits with code `2` for it, because an audit
+that could not see every symbol must not report success.
+
+`ExtensionReport.incomplete` is set when part of the symbol table was
+unreadable but names were recovered; `ExtensionReport.error` means nothing
+could be read at all and the verdicts are placeholders.
+
 ### `inspect_package(name_or_path) -> PackageReport`
 
 Inspect an installed package. `name_or_path` is either:
@@ -31,6 +42,12 @@ Inspect an installed package. `name_or_path` is either:
 The returned `PackageReport` separates Python extension modules
 (`.extensions`) from bundled internal libraries (`.bundled_libs`); both
 contribute to the torch ABI verdict.
+
+A directory is scanned for the host's library formats (`.so` / `.pyd` /
+`.dylib` on Linux and macOS, `.pyd` / `.dll` on Windows). A file named
+explicitly is inspected whatever platform built it: the built-in PE parser makes
+a Windows `.pyd` / `.dll` readable from Linux or macOS, while ELF and Mach-O
+inspection still requires the host's `nm`.
 
 ### `inspect_site_packages(directory=None) -> EnvironmentReport`
 
@@ -46,8 +63,10 @@ All result dataclasses are frozen, slotted, and fully typed.
 @dataclass(frozen=True, slots=True)
 class CPythonABIVerdict:
     intent: bool         # filename carries an `abi3` tag
-    compliant: bool      # all Py*/_Py* symbols are in the stable set
+    compliant: bool      # all Py*/_Py* symbols are in the stable set, and the
+                         # extension links the version-agnostic python3.dll
     violations: tuple[str, ...]
+    python_dll: str | None   # Windows Python DLL it imports from, if known
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,16 +85,19 @@ class ExtensionReport:
     path: Path
     cpython: CPythonABIVerdict
     torch: TorchABIVerdict
-    error: str | None
+    error: str | None        # nothing could be read; verdicts are placeholders
+    incomplete: str | None   # part of the symbol table was unreadable
 
 
 @dataclass(frozen=True, slots=True)
 class PackageReport:
     name: str
     root: Path
-    extensions: tuple[ExtensionReport, ...]      # PyInit_*-bearing .so files
-    bundled_libs: tuple[ExtensionReport, ...]    # other compiled .so files in the package
+    extensions: tuple[ExtensionReport, ...]      # PyInit_*-bearing libraries
+    bundled_libs: tuple[ExtensionReport, ...]    # other compiled libs in the package
     error: str | None
+    # @property has_error         -> True if the package or any library has an
+    #                                `error` or an `incomplete` read (CLI exits 2)
     # @property torch_verdict     -> "torch-stable" | "torch-unstable" | "no-torch" | "error"
     # @property min_torch_version -> "2.10.0"-style floor across all libs, or None
     # @property min_torch_display -> same, ">="-prefixed when unknown newer shims are present
@@ -87,6 +109,26 @@ class EnvironmentReport:
     site_packages: Path
     packages: tuple[PackageReport, ...]
 ```
+
+### `python_dll`
+
+On Windows the extension's dependency list is available, and a Stable ABI
+build must import from `python3.dll` — the forwarder that re-exports the stable
+surface for whichever interpreter is installed. `python_dll` records what was
+actually linked: `python3.dll` for a compliant build, `pythonXXX.dll` (including
+`python3XXt.dll` / `python3XX_d.dll` free-threaded and debug builds) for one
+pinned to a single interpreter. A pinned dependency forces `compliant` to
+`False` even when every symbol is stable, since `pythonXXX.dll` exports the same
+stable names. The field is `None` on ELF and Mach-O, where the dependency list
+is not read.
+
+### `incomplete`
+
+`incomplete` means the verdict was built from a partial symbol table. The names
+recovered before the damage are kept and classified, so the verdict reflects
+real usage rather than looking clean, but the read is not treated as a success:
+`report.has_error` becomes `True`, the CLI prints the reason, and the process
+exits with code `2` (taking precedence over a `--check` violation code of `1`).
 
 ## Formatters
 
